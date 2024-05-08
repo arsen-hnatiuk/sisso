@@ -10,15 +10,22 @@ logging.basicConfig(
 
 class SISSO:
     def __init__(self, K: np.ndarray, y: np.ndarray) -> None:
-        self.K = K
-        self.K_transpose = np.transpose(K)
+        self.norms = np.linalg.norm(K, axis=0)
+        self.K_transpose = np.array(
+            [row / norm for row, norm in zip(np.transpose(K), self.norms)]
+        )
+        self.K = np.transpose(self.K_transpose)
         self.y = y
         self.data_size = len(y)
 
-    def fit(self, tol: float = 0.01, max_iterations: float = 5) -> np.ndarray:
+    def fit(self, tol: float = 0.01, max_iterations: float = 4) -> np.ndarray:
         sis_subspace_size = max(
-            int(np.exp(self.data_size / (3.125 * max_iterations)) / max_iterations), 1
-        )
+            min(
+                int(np.exp(self.data_size / (3.125 * max_iterations))),
+                25,
+            ),
+            1,
+        )  # default is 25, but we make sure that the value is smaller than the exponential expression
         active_set = np.array([], dtype=int)
         iterate = np.zeros(self.data_size)
         residual = iterate - self.y
@@ -26,7 +33,7 @@ class SISSO:
         n = 1
         while error > tol and n <= max_iterations:
             # SIS
-            correlations = np.matmul(self.K_transpose, residual)
+            correlations = np.absolute(np.matmul(self.K_transpose, residual))
             sorted_correlations = np.flip(np.argsort(correlations))
             active_set = np.concatenate(
                 (active_set, sorted_correlations[:sis_subspace_size])
@@ -50,7 +57,7 @@ class SISSO:
                 else:
                     local_error = np.linalg.norm(
                         np.matmul(submatrix, least_squares) - self.y
-                    )
+                    )  # No residuals if equation overdetermined
                 if local_error < min_error:
                     min_error = local_error
                     optimal_combination = combination
@@ -61,12 +68,12 @@ class SISSO:
             residual = iterate - self.y
             error = min_error
 
-            logging.info("------------------")
             logging.info(f"Iteration: {n}")
             logging.info(f"Error: {error}")
             logging.info(f"Number of combinations: {combinatorial_counter}")
             logging.info(f"Optimal combination: {optimal_combination}")
             logging.info(f"Optimal coefficients: {optimal_coefficients}")
+            logging.info("------------------")
             n += 1
 
 
