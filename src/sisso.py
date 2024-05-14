@@ -18,14 +18,9 @@ class SISSO:
         self.y = y
         self.data_size = len(y)
 
-    def fit(self, tol: float = 0.01, max_iterations: float = 4) -> np.ndarray:
-        sis_subspace_size = max(
-            min(
-                int(np.exp(self.data_size / (3.125 * max_iterations))),
-                25,
-            ),
-            1,
-        )  # default is 25, but we make sure that the value is smaller than the exponential expression
+    def fit(
+        self, tol: float = 0.01, max_iterations: float = 4, sis_subspace_size=25
+    ) -> np.ndarray:
         active_set = np.array([], dtype=int)
         iterate = np.zeros(self.data_size)
         residual = iterate - self.y
