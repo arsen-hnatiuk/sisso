@@ -9,21 +9,21 @@ logging.basicConfig(
 
 
 class SISSO:
-    def __init__(self, K: np.ndarray, y: np.ndarray) -> None:
+    def __init__(self, K: np.ndarray, target: np.ndarray) -> None:
         self.norms = np.linalg.norm(K, axis=0)
         self.K_transpose = np.array(
             [row / norm for row, norm in zip(np.transpose(K), self.norms)]
         )
         self.K = np.transpose(self.K_transpose)
-        self.y = y
-        self.data_size = len(y)
+        self.target_norm = np.linalg.norm(target)
+        self.target = target / self.target_norm
 
     def fit(
         self, tol: float = 0.01, max_iterations: float = 4, sis_subspace_size=25
-    ) -> np.ndarray:
+    ) -> None:
         active_set = np.array([], dtype=int)
-        iterate = np.zeros(self.data_size)
-        residual = iterate - self.y
+        iterate = np.zeros(len(self.target))
+        residual = iterate - self.target
         error = np.linalg.norm(residual)
         n = 1
         while error > tol and n <= max_iterations:
@@ -45,13 +45,13 @@ class SISSO:
                 combinatorial_counter += 1
                 submatrix = self.K[:, np.array(combination)]
                 least_squares, res, rank, s = np.linalg.lstsq(
-                    submatrix, self.y, rcond=None
+                    submatrix, self.target, rcond=None
                 )
                 if len(res):
                     local_error = np.sqrt(res[0])
                 else:
                     local_error = np.linalg.norm(
-                        np.matmul(submatrix, least_squares) - self.y
+                        np.matmul(submatrix, least_squares) - self.target
                     )  # No residuals if equation overdetermined
                 if local_error < min_error:
                     min_error = local_error
@@ -60,7 +60,7 @@ class SISSO:
             iterate = np.matmul(
                 self.K[:, np.array(optimal_combination)], optimal_coefficients
             )
-            residual = iterate - self.y
+            residual = iterate - self.target
             error = min_error
 
             logging.info(f"Iteration: {n}")
