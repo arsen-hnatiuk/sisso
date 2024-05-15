@@ -10,17 +10,17 @@ logging.basicConfig(
 
 class SISSO:
     def __init__(self, K: np.ndarray, target: np.ndarray) -> None:
-        self.norms = np.linalg.norm(K, axis=0)
+        self.K_norms = np.linalg.norm(K, axis=0)
         self.K_transpose = np.array(
-            [row / norm for row, norm in zip(np.transpose(K), self.norms)]
+            [row / norm for row, norm in zip(np.transpose(K), self.K_norms)]
         )
         self.K = np.transpose(self.K_transpose)
-        self.target_norm = np.linalg.norm(target)
-        self.target = target / self.target_norm
+        self.target = target
 
     def fit(
         self, tol: float = 0.01, max_iterations: float = 4, sis_subspace_size=25
-    ) -> None:
+    ) -> list:
+        output = []
         active_set = np.array([], dtype=int)
         iterate = np.zeros(len(self.target))
         residual = iterate - self.target
@@ -44,15 +44,17 @@ class SISSO:
             for combination in combinatorial_combinations:
                 combinatorial_counter += 1
                 submatrix = self.K[:, np.array(combination)]
-                least_squares, res, rank, s = np.linalg.lstsq(
-                    submatrix, self.target, rcond=None
-                )
-                if len(res):
-                    local_error = np.sqrt(res[0])
-                else:
-                    local_error = np.linalg.norm(
-                        np.matmul(submatrix, least_squares) - self.target
-                    )  # No residuals if equation overdetermined
+                try:
+                    least_squares, res, rank, s = np.linalg.lstsq(
+                        submatrix, self.target, rcond=None
+                    )
+                    local_error = np.sqrt(
+                        np.mean(
+                            np.square(np.matmul(submatrix, least_squares) - self.target)
+                        )
+                    )  # RMSE
+                except np.linalg.LinAlgError:
+                    local_error = min_error
                 if local_error < min_error:
                     min_error = local_error
                     optimal_combination = combination
@@ -63,6 +65,11 @@ class SISSO:
             residual = iterate - self.target
             error = min_error
 
+            n_solution = np.zeros(self.K.shape[1])
+            for i, position in enumerate(optimal_combination):
+                n_solution[position] = optimal_coefficients[i] / self.K_norms[position]
+            output.append(n_solution)
+
             logging.info(f"Iteration: {n}")
             logging.info(f"Error: {error}")
             logging.info(f"Number of combinations: {combinatorial_counter}")
@@ -70,6 +77,8 @@ class SISSO:
             logging.info(f"Optimal coefficients: {optimal_coefficients}")
             logging.info("------------------")
             n += 1
+
+        return output
 
 
 # if __name__ == "__main__":
