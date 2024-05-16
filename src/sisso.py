@@ -11,6 +11,7 @@ logging.basicConfig(
 class SISSO:
     def __init__(self, K: np.ndarray, target: np.ndarray) -> None:
         self.K_norms = np.linalg.norm(K, axis=0)
+        self.K_norms[self.K_norms == 0] = 1  # Avoid division by zero
         self.K_transpose = np.array(
             [row / norm for row, norm in zip(np.transpose(K), self.K_norms)]
         )
@@ -18,17 +19,28 @@ class SISSO:
         self.target = target
 
     def fit(
-        self, tol: float = 0.01, max_iterations: float = 4, sis_subspace_size=25
+        self,
+        max_iterations: float = 4,
+        sis_subspace_size: int = 25,
+        nbr_residuals: int = 10,
     ) -> list:
         output = []
         active_set = np.array([], dtype=int)
         iterate = np.zeros(len(self.target))
-        residual = iterate - self.target
-        error = np.linalg.norm(residual)
+        residuals = np.array([iterate - self.target])
+        errors = np.array([np.linalg.norm(residual) for residual in residuals])
         n = 1
-        while error > tol and n <= max_iterations:
+        while n <= max_iterations:
             # SIS
-            correlations = np.absolute(np.matmul(self.K_transpose, residual))
+            try:
+                correlations = np.maximum(
+                    *[
+                        np.absolute(np.matmul(self.K_transpose, residual))
+                        for residual in residuals
+                    ]
+                )
+            except TypeError:
+                correlations = np.absolute(np.matmul(self.K_transpose, residuals[0]))
             sorted_correlations = np.flip(np.argsort(correlations))
             active_set = np.concatenate(
                 (active_set, sorted_correlations[:sis_subspace_size])
@@ -37,41 +49,46 @@ class SISSO:
 
             # SO
             combinatorial_combinations = combinations(active_set, n)
-            min_error = 10 * error
+            min_errors = np.array([10e5] * nbr_residuals)
             optimal_combination = None
             optimal_coefficients = None
+            best_residuals = np.array([np.zeros(len(self.target))] * nbr_residuals)
             combinatorial_counter = 0
             for combination in combinatorial_combinations:
                 combinatorial_counter += 1
-                submatrix = self.K[:, np.array(combination)]
+                submatrix = np.append(
+                    self.K[:, np.array(combination)],
+                    np.ones((self.K.shape[0], 1)),
+                    axis=1,
+                )
                 try:
                     least_squares, res, rank, s = np.linalg.lstsq(
                         submatrix, self.target, rcond=None
                     )
-                    local_error = np.sqrt(
-                        np.mean(
-                            np.square(np.matmul(submatrix, least_squares) - self.target)
-                        )
-                    )  # RMSE
+                    residual = np.matmul(submatrix, least_squares) - self.target
+                    local_error = np.sqrt(np.mean(np.square(residual)))  # RMSE
                 except np.linalg.LinAlgError:
-                    local_error = min_error
-                if local_error < min_error:
-                    min_error = local_error
-                    optimal_combination = combination
-                    optimal_coefficients = least_squares
-            iterate = np.matmul(
-                self.K[:, np.array(optimal_combination)], optimal_coefficients
-            )
-            residual = iterate - self.target
-            error = min_error
+                    continue
+                if local_error < min_errors[-1]:
+                    if local_error < min_errors[0]:
+                        optimal_combination = combination
+                        optimal_coefficients = least_squares
+                    min_errors[-1] = local_error
+                    best_residuals[-1] = residual
+                    sorted_indices = np.argsort(min_errors)
+                    min_errors = min_errors[sorted_indices]
+                    best_residuals = best_residuals[sorted_indices]
+            errors = min_errors[:combinatorial_counter]
+            residuals = best_residuals[:combinatorial_counter]
 
-            n_solution = np.zeros(self.K.shape[1])
+            n_solution = np.zeros(self.K.shape[1] + 1)
             for i, position in enumerate(optimal_combination):
                 n_solution[position] = optimal_coefficients[i] / self.K_norms[position]
+            n_solution[-1] = optimal_coefficients[-1]  # The constant term
             output.append(n_solution)
 
             logging.info(f"Iteration: {n}")
-            logging.info(f"Error: {error}")
+            logging.info(f"Error: {errors[0]}")
             logging.info(f"Number of combinations: {combinatorial_counter}")
             logging.info(f"Optimal combination: {optimal_combination}")
             logging.info(f"Optimal coefficients: {optimal_coefficients}")
