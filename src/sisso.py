@@ -91,7 +91,10 @@ class SISSO:
             logging.info(f"Error: {errors[0]}")
             logging.info(f"Number of combinations: {combinatorial_counter}")
             logging.info(f"Optimal combination: {optimal_combination}")
-            logging.info(f"Optimal coefficients: {optimal_coefficients}")
+            logging.info(
+                f"Optimal coefficients: {n_solution[np.array(optimal_combination)]}"
+            )
+            logging.info(f"Optimal constant term: {n_solution[-1]}")
             logging.info("------------------")
             n += 1
 
