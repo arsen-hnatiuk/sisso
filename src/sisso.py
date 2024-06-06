@@ -2,6 +2,7 @@ import numpy as np
 import logging
 from itertools import combinations
 import random
+import time
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -20,7 +21,7 @@ class SISSO:
 
     def fit(
         self,
-        max_iterations: float = 4,
+        max_iterations: float = 3,
         sis_subspace_size: int = 25,
         nbr_residuals: int = 10,
     ) -> list:
@@ -31,6 +32,7 @@ class SISSO:
         errors = np.array([np.linalg.norm(residual) for residual in residuals])
         n = 1
         while n <= max_iterations:
+            start_time = time.time()
             # SIS
             try:
                 correlations = np.maximum(
@@ -58,7 +60,7 @@ class SISSO:
                 combinatorial_counter += 1
                 submatrix = np.append(
                     self.K[:, np.array(combination)],
-                    np.ones((self.K.shape[0], 1)),
+                    np.ones((self.K.shape[0], 1)) / np.sqrt(self.K.shape[0]),
                     axis=1,
                 )
                 try:
@@ -83,18 +85,20 @@ class SISSO:
 
             n_solution = np.zeros(self.K.shape[1] + 1)
             for i, position in enumerate(optimal_combination):
+                # Denormalize
                 n_solution[position] = optimal_coefficients[i] / self.K_norms[position]
-            n_solution[-1] = optimal_coefficients[-1]  # The constant term
+            n_solution[-1] = optimal_coefficients[-1] / np.sqrt(
+                self.K.shape[0]
+            )  # The constant term
             output.append(n_solution)
+            iteration_time = time.time() - start_time
 
             logging.info(f"Iteration: {n}")
             logging.info(f"Error: {errors[0]}")
             logging.info(f"Number of combinations: {combinatorial_counter}")
             logging.info(f"Optimal combination: {optimal_combination}")
-            logging.info(
-                f"Optimal coefficients: {n_solution[np.array(optimal_combination)]}"
-            )
-            logging.info(f"Optimal constant term: {n_solution[-1]}")
+            logging.info(f"Optimal coefficients: {optimal_coefficients}")
+            logging.info(f"Time of iteration: {iteration_time}")
             logging.info("------------------")
             n += 1
 
